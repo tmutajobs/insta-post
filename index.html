@@ -168,10 +168,7 @@ body {
       <div class="input-section">
         <div class="input-label">お店の名前を入力してください</div>
         <input type="text" class="store-input" id="storeInput" placeholder="例：一蘭 渋谷店" autocomplete="off" autocorrect="off" spellcheck="false">
-        <div class="input-label" style="margin-top:4px;">参考リンク（任意）</div>
-        <input type="url" class="store-input link-input" id="link1" placeholder="参考URL 1（例：食べログのURL）" autocomplete="off">
-        <input type="url" class="store-input link-input" id="link2" placeholder="参考URL 2" autocomplete="off">
-        <input type="url" class="store-input link-input" id="link3" placeholder="参考URL 3" autocomplete="off">
+
         <div class="error-msg" id="errorMsg">エラーが発生しました。もう一度お試しください。</div>
         <button class="generate-btn" id="generateBtn">
           <div class="btn-inner">
@@ -245,59 +242,115 @@ async function fetchUrlText(url) {
 }
 
 async function callAPI(storeName) {
-  setLoading(true, 'URL確認中…');
-  hideError();
+  var btn = document.getElementById('generateBtn');
+  var label = btn.querySelector('.btn-label');
+  var errorMsg = document.getElementById('errorMsg');
 
-  var link1 = document.getElementById('link1').value.trim();
-  var link2 = document.getElementById('link2').value.trim();
-  var link3 = document.getElementById('link3').value.trim();
+  btn.disabled = true;
+  btn.classList.add('generating');
+  label.textContent = '検索中…';
+  errorMsg.style.display = 'none';
 
-  var urlContents = [];
-  if (link1) { var t1 = await fetchUrlText(link1); if (t1) urlContents.push('【参考URL1の内容】\n' + t1); }
-  if (link2) { var t2 = await fetchUrlText(link2); if (t2) urlContents.push('【参考URL2の内容】\n' + t2); }
-  if (link3) { var t3 = await fetchUrlText(link3); if (t3) urlContents.push('【参考URL3の内容】\n' + t3); }
+  var systemPrompt = `あなたは日本全国のレストラン・カフェ・飲食店の情報に詳しい専門家です。
+食べログ・ぐるなび・公式サイトなどに掲載されている正確な情報をもとに回答してください。
+住所・電話番号・営業時間・予算・最寄駅は正確に記載してください。
+確信が持てない情報のみ「要確認」と書いてください。`;
 
-  setLoading(true, '生成中…');
+  var userPrompt = `「${storeName}」のインスタグラム投稿文を作成してください。
 
-  var systemPrompt = 'あなたは日本のグルメ情報に精通したインスタグラム投稿文の作成専門家です。提供された参考情報をもとに正確な店舗情報を記載してください。不明な情報のみ「要確認」と書いてください。';
+このお店の正確な情報（住所・最寄駅・電話番号・営業時間・予算）を調べて、以下のフォーマットで出力してください。
+フォーマット以外のテキストは一切出力しないこと。
 
-  var userPrompt = 'お店の名前：' + storeName + '\n\n';
-  if (urlContents.length > 0) {
-    userPrompt += '以下の参考情報をもとに投稿文を作成してください。\n\n' + urlContents.join('\n\n') + '\n\n';
-  } else {
-    userPrompt += '食べログ等で公開されている情報をもとに、知っている範囲で正確に記載してください。\n\n';
-  }
-  userPrompt += '以下のフォーマットのみを出力してください（前置き・補足は一切不要）：\n\n';
-  userPrompt += '📍 ' + storeName + '\n住所：\n最寄駅：\n電話番号：\n営業時間：月・火・水・木・金・土・日\n（各曜日の時間または定休日）\n予算：\n\n⬇️\n\n（200〜300字。絵文字は控えめに。シックで上品な文体でお店の魅力を伝える）\n\n（ハッシュタグ5個）';
+📍 ${storeName}
+住所：（正確な住所を記載）
+最寄駅：（最寄駅と路線名）
+電話番号：（正確な電話番号）
+営業時間：月・火・水・木・金・土・日
+（各曜日の営業時間、または定休日を記載）
+予算：（一人あたりの目安金額）
+
+⬇️
+
+（200〜300字。絵文字は控えめに。シックで上品な文体でお店の魅力・雰囲気・おすすめポイントを伝える）
+
+（#から始まるハッシュタグ5個）`;
 
   try {
-    var res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
-    });
+    var messages = [{ role: 'user', content: userPrompt }];
+    var finalText = '';
 
-    var data = await res.json();
-    if (!res.ok || !data.content) throw new Error(data.error ? data.error.message : 'error');
+    for (var i = 0; i < 10; i++) {
+      if (i === 1) label.textContent = '生成中…';
 
-    var text = '';
-    for (var i = 0; i < data.content.length; i++) {
-      if (data.content[i].type === 'text') text += data.content[i].text;
+      var res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: systemPrompt,
+          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+          messages: messages
+        })
+      });
+
+      var data = await res.json();
+      if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (data.error ? data.error.message : ''));
+
+      messages.push({ role: 'assistant', content: data.content });
+
+      if (data.stop_reason === 'end_turn') {
+        for (var j = 0; j < data.content.length; j++) {
+          if (data.content[j].type === 'text') finalText += data.content[j].text;
+        }
+        break;
+      }
+
+      if (data.stop_reason === 'tool_use') {
+        var toolResults = [];
+        for (var k = 0; k < data.content.length; k++) {
+          var block = data.content[k];
+          if (block.type === 'tool_use') {
+            // web_searchの結果はblockの中に既に入っている
+            var resultContent = '';
+            if (block.content) {
+              resultContent = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+            } else if (block.output) {
+              resultContent = typeof block.output === 'string' ? block.output : JSON.stringify(block.output);
+            } else {
+              resultContent = '検索を実行しました';
+            }
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: resultContent
+            });
+          }
+        }
+        if (toolResults.length > 0) {
+          messages.push({ role: 'user', content: toolResults });
+        }
+        continue;
+      }
+
+      for (var m = 0; m < data.content.length; m++) {
+        if (data.content[m].type === 'text') finalText += data.content[m].text;
+      }
+      if (finalText) break;
     }
-    if (!text.trim()) throw new Error('テキストが空');
-    document.getElementById('resultBox').innerText = text.trim();
+
+    if (!finalText) throw new Error('テキストが取得できませんでした');
+    document.getElementById('resultBox').innerText = finalText.trim();
     showPage('result');
 
   } catch(err) {
-    console.error(err);
-    showError('エラーが発生しました。もう一度お試しください。');
+    console.error('Error:', err);
+    errorMsg.textContent = err.message || 'エラーが発生しました。もう一度お試しください。';
+    errorMsg.style.display = 'block';
   } finally {
-    setLoading(false);
+    btn.disabled = false;
+    btn.classList.remove('generating');
+    label.textContent = '投稿文を生成する';
   }
 }
 
